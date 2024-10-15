@@ -1,0 +1,175 @@
+version: '3.9'
+services:
+  vpn:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    network_mode: "bridge"
+    ports:
+      - 8888:8888/tcp # HTTP proxy
+      - 8388:8388/tcp # Shadowsocks
+      - 8388:8388/udp # Shadowsocks
+      - 8000:8000/tcp # Build-in HTTP control header
+    # Other services's port
+      - ${QBT_WEBUI_PORT}:${QBT_WEBUI_PORT}/tcp   # qbit webui
+      - 6767:6767/tcp     # bazarr
+      - 8989:8989/tcp     # sonarr
+      - 7878:7878/tcp     # radarr
+      - 8191:8191/tcp     # flaresolverr
+      - 9696:9696/tcp     # prowlarr
+      - 5055:5055/tcp     # Jellyseer
+      - 8096:8096/tcp     # Emby
+    volumes:
+      - ./config/gluetun:/gluetun
+    environment:
+      - DOT=off
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - VPN_SERVICE_PROVIDER=surfshark
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${SS_USER}
+      - OPENVPN_PASSWORD=${SS_PASS}
+      - UPDATER_PERIOD=24h
+      - SERVER_COUNTRIES=${SS_REGION}
+      - FIREWALL_OUTBOUND_SUBNETS=${NETWORK_SUBNET}/24
+      - HTTPPROXY=on
+      - SHADOWSOCKS=on
+      - SHADOWSOCKS_PASSWORD=${SHADOW_PASS}
+    sysctls:
+      # wg-quick fails to set this without --privileged, so set it here instead if needed
+      - net.ipv4.conf.all.src_valid_mark=1
+      # May as well disable ipv6. Should be blocked anyway.
+      - net.ipv6.conf.default.disable_ipv6=1
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.lo.disable_ipv6=1
+      # The container has no recovery logic. Use a healthcheck to catch disconnects.
+    healthcheck:
+      test: ping -c 1 www.google.com || exit 1
+      interval: 60s
+      timeout: 20s
+      retries: 5
+    restart: unless-stopped
+
+  # A library / filter system for movies
+  radarr:
+    container_name: radarr
+    network_mode: "service:vpn"
+    restart: unless-stopped
+    volumes:
+      - ./config/Radarr:/config
+      - ${BASE_DIR}/Movies:/mnt/Movies
+      - ${BASE_DIR}/Downloads:/mnt/downloads 
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    image: linuxserver/radarr
+
+  # A library / filter system for TV shows
+  sonarr:
+    container_name: sonarr
+    network_mode: "service:vpn"
+    restart: unless-stopped
+    volumes:
+      - ./config/Sonarr:/config
+      - ${BASE_DIR}/TVShows:/mnt/TVShows
+      - ${BASE_DIR}/Downloads:/mnt/downloads 
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    image: linuxserver/sonarr
+
+  # A tool that enables a single API to search trackers
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    network_mode: "service:vpn"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/prowlarr:/config
+    restart: unless-stopped
+
+
+  # Tool to download subtitles
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    network_mode: "service:vpn"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/bazarr:/config
+      - ${BASE_DIR}/Movies:/movies
+      - ${BASE_DIR}/TVShows:/tv
+    restart: unless-stopped
+
+  # Some tracker sites can only be used (with Jackett / Prowlarr) using flaresolverr
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    network_mode: "service:vpn"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=${TZ}
+    restart: unless-stopped
+
+  # The qBittorrent client
+  qbittorrent:
+    image: qbittorrentofficial/qbittorrent-nox:latest
+    network_mode: "service:vpn"
+    container_name: qbittorrent-nox
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - QBT_WEBUI_PORT=${QBT_WEBUI_PORT}
+    stop_grace_period: 30m
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./config:/config
+      - ./config/gluetun:/config/data_gluetun
+      - ${BASE_DIR}/Downloads:/mnt/downloads
+    restart: unless-stopped
+    depends_on:
+      - vpn
+
+  # Media management client
+  emby:
+    image: lscr.io/linuxserver/emby:latest
+    container_name: emby
+    network_mode: "service:vpn"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config:/config
+      - ${BASE_DIR}/Downloads:/data/downloads
+      - ${BASE_DIR}/TVShows:/data/tvshows
+      - ${BASE_DIR}/Movies:/data/movies
+    restart: unless-stopped
+
+  # Searcher for sonarr and radarr
+  jellyseerr:
+      image: fallenbagel/jellyseerr:latest
+      container_name: jellyseerr
+      network_mode: "service:vpn"
+      environment:
+        - JELLYFIN_TYPE=emby
+        - LOG_LEVEL=debug
+        - TZ=${TZ}
+      volumes:
+        - ./config/jellyseer:/app/config
+      restart: unless-stopped
