@@ -20,7 +20,6 @@ services:
       - 8191:8191/tcp     # flaresolverr
       - 9696:9696/tcp     # prowlarr
       - 5055:5055/tcp     # Jellyseer
-      - 8096:8096/tcp     # Emby
     volumes:
       - ./config/gluetun:/gluetun
     environment:
@@ -37,7 +36,6 @@ services:
       - FIREWALL_OUTBOUND_SUBNETS=${NETWORK_SUBNET}/24
       - HTTPPROXY=on
       - SHADOWSOCKS=on
-      - SHADOWSOCKS_PASSWORD=${SHADOW_PASS}
     sysctls:
       # wg-quick fails to set this without --privileged, so set it here instead if needed
       - net.ipv4.conf.all.src_valid_mark=1
@@ -144,22 +142,6 @@ services:
     restart: unless-stopped
     depends_on:
       - vpn
-
-  # Media management client
-  emby:
-    image: lscr.io/linuxserver/emby:latest
-    container_name: emby
-    network_mode: "service:vpn"
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-    volumes:
-      - ./config:/config
-      - ${BASE_DIR}/Downloads:/data/downloads
-      - ${BASE_DIR}/TVShows:/data/tvshows
-      - ${BASE_DIR}/Movies:/data/movies
-    restart: unless-stopped
 
   # Searcher for sonarr and radarr
   jellyseerr:
