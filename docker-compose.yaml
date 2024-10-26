@@ -9,8 +9,6 @@ services:
     network_mode: "bridge"
     ports:
       - 8888:8888/tcp # HTTP proxy
-      - 8388:8388/tcp # Shadowsocks
-      - 8388:8388/udp # Shadowsocks
       - 8000:8000/tcp # Build-in HTTP control header
     # Other services's port
       - ${QBT_WEBUI_PORT}:${QBT_WEBUI_PORT}/tcp   # qbit webui
@@ -19,11 +17,12 @@ services:
       - 7878:7878/tcp     # radarr
       - 8191:8191/tcp     # flaresolverr
       - 9696:9696/tcp     # prowlarr
-      - 5055:5055/tcp     # Jellyseer
+      - 8787:8787/tcp     # readarr
+      - 7575:7575/tcp     # homarr
     volumes:
       - ./config/gluetun:/gluetun
     environment:
-      - DOT=off
+      - DOT=off           # Activate DNS over TLS
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
@@ -35,7 +34,6 @@ services:
       - SERVER_COUNTRIES=${SS_REGION}
       - FIREWALL_OUTBOUND_SUBNETS=${NETWORK_SUBNET}/24
       - HTTPPROXY=on
-      - SHADOWSOCKS=on
     sysctls:
       # wg-quick fails to set this without --privileged, so set it here instead if needed
       - net.ipv4.conf.all.src_valid_mark=1
@@ -51,13 +49,24 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Homepage to all arr tools
+  homarr:
+    image: ghcr.io/ajnart/homarr:latest
+    container_name: homarr
+    network_mode: "service:vpn"
+    restart: unless-stopped
+    volumes:
+      - ./config/homarr:/app/data/configs
+      - ./config/homarr/icons:/app/public/icons
+      - ./config/homarr/data:/data
+
   # A library / filter system for movies
   radarr:
     container_name: radarr
     network_mode: "service:vpn"
     restart: unless-stopped
     volumes:
-      - ./config/Radarr:/config
+      - ./config/radarr:/config
       - ${BASE_DIR}/Movies:/mnt/Movies
       - ${BASE_DIR}/Downloads:/mnt/downloads 
     environment:
@@ -72,7 +81,7 @@ services:
     network_mode: "service:vpn"
     restart: unless-stopped
     volumes:
-      - ./config/Sonarr:/config
+      - ./config/sonarr:/config
       - ${BASE_DIR}/TVShows:/mnt/TVShows
       - ${BASE_DIR}/Downloads:/mnt/downloads 
     environment:
@@ -110,6 +119,21 @@ services:
       - ${BASE_DIR}/TVShows:/tv
     restart: unless-stopped
 
+  # A library / Filter for ebooks, comics and etc.
+  readarr:
+    image: lscr.io/linuxserver/readarr:develop
+    container_name: readarr
+    network_mode: "service:vpn"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/readarr:/config
+      - ${BASE_DIR}/Books:/mnt/Books
+      - ${BASE_DIR}/Downloads:/mnt/downloads
+    restart: unless-stopped
+
   # Some tracker sites can only be used (with Jackett / Prowlarr) using flaresolverr
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
@@ -143,15 +167,97 @@ services:
     depends_on:
       - vpn
 
+  # Nginx proxy manager
+  nginx:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: proxy-manager
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 81:81
+      - 443:443
+    environment:
+      DB_MYSQL_HOST: ${DB_MYSQL_HOST}
+      DB_MYSQL_PORT: 3306
+      DB_MYSQL_USER: ${DB_USERNAME}
+      DB_MYSQL_PASSWORD: ${DB_MYSQL_PWD}
+      DB_MYSQL_NAME: ${DB_NAME}
+    volumes:
+      - ./config/npm/data:/data
+      - ./config/npm/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - proxydb
+    networks:
+      - nginx-proxy
+
+  # Db to store nginx config
+  proxydb:
+    image: 'mariadb'
+    container_name: proxy-manager-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PWD}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_MYSQL_PWD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MARIADB_AUTO_UPGRADE: '1'
+    volumes:
+      - ./config/npm:/var/lib/mysql
+    networks:
+      - nginx-proxy
+  
+  # DBMS
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    environment:
+      ADMINER_DEFAULT_SERVER: proxydb
+      ADMINER_DESIGN: dracula
+    networks:
+      - nginx-proxy
+
   # Searcher for sonarr and radarr
   jellyseerr:
       image: fallenbagel/jellyseerr:latest
       container_name: jellyseerr
-      network_mode: "service:vpn"
+      networks:
+        - nginx-proxy
       environment:
         - JELLYFIN_TYPE=emby
         - LOG_LEVEL=debug
         - TZ=${TZ}
+      ports:
+        - 5055:5055
       volumes:
         - ./config/jellyseer:/app/config
       restart: unless-stopped
+
+  # Emby 
+  emby:
+    image: lscr.io/linuxserver/emby:latest
+    container_name: emby
+    networks:
+      - nginx-proxy
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/emby:/config
+      - ${BASE_DIR}/TVShows:/data/tvshows
+      - ${BASE_DIR}/Movies:/data/movies
+    ports:
+      - 8096:8096
+    restart: unless-stopped
+
+volumes:
+  data:
+  letsencrypt:
+
+networks:
+  nginx-proxy:
+    driver: bridge
+    external: true
