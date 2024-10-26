@@ -55,13 +55,13 @@ Edit the `.env` file and change the related settings:
 In the directory where is your project is located:
 
 ```sh
-    docker-compose up -d
+    docker compose up -d
 ```
 
 You can then check the status of the container:
 
 ```sh
-    docker-compose ps
+    docker compose ps
 ```
 
 ## 🚫 Stopping
@@ -69,8 +69,17 @@ You can then check the status of the container:
 To stop the container:
 
 ```sh
-    docker-compose down
+    docker compose down
 ```
+
+## 📩 Update Image
+
+You can update all the images by running this command in your project's root folder:
+
+```sh
+    docker compose pull
+```
+
 
 ## ⚙️ Configuring
 
