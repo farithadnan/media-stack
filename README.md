@@ -11,13 +11,18 @@
 
 The Media-Stack services include:
 
-- VPN (Gluetun)
+- Gluetun (Surfshark)
 - qBittorrent
 - Radarr and Sonarr
 - Prowlarr
 - Bazarr
+- Readarr
 - FlareSolverr
 - Jellyseerr
+- Emby
+- Nginx Proxy Manager
+- MariaDb
+- Adminer
 
 ## 🌵 Install
 
@@ -37,6 +42,13 @@ Edit the `.env` file and change the related settings:
 - `PGID`: Unix group ID of the system user the containers will run as.
 - `QBT_WEBUI_PORT`: The port for the qBittorrent's WebUI/client.
 - `NETWORK_SUBNET`: The local IP address of the machine, with a zero at the end.
+- `BASE_DIR`: Your media directory.
+- `DB_MYSQL_HOST`: MYSQL host name.
+- `DB_ROOT_PWD`: MYSQL root password.
+- `DB_USERNAME`: DB user's name.
+- `DB_NAME`: DB's name.
+- `DB_MYSQL_PWD`: DB's password.
+
 
 ## 🏃🏻‍♂️Running
 
